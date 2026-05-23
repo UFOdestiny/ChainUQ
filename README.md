@@ -19,7 +19,7 @@ Generate -> Judge -> Cleanup -> Train -> Evaluate
 
 ## Included head family
 
-The release keeps the paper-aligned CHAINUQ head and its ablations:
+The release keeps the CHAINUQ head and its ablations:
 
 - `chainuq`
 - `uq_abl_v1`
@@ -27,7 +27,6 @@ The release keeps the paper-aligned CHAINUQ head and its ablations:
 - `uq_abl_v3`
 - `uq_abl_v4`
 
-No external baseline implementations are included in this package.
 
 ## Layout
 
