@@ -313,7 +313,7 @@ def parse_args():
     parser.add_argument("--enable_posthoc", action="store_true", default=True,
                         help="Enable post-hoc calibration (default: on)")
     parser.add_argument("--no_enable_posthoc", dest="enable_posthoc", action="store_false")
-    parser.add_argument("--posthoc_method", type=str, default="reasoning_logistic",
+    parser.add_argument("--posthoc_method", type=str, default="reasoning_logistic_blend",
                         choices=list(VALID_POSTHOC_METHODS),
                         help="Post-hoc calibrator method")
     parser.add_argument("--posthoc_tune_split", type=str, default="validation",
@@ -393,10 +393,7 @@ def _build_supervised_prediction_rows(
 
 
 HEAVY_REASONING_POSTHOC_METHODS = {
-    "reasoning_logistic",
-    "reasoning_logistic_isotonic",
     "reasoning_logistic_blend",
-    "binwise_hybrid",
 }
 
 
@@ -583,9 +580,8 @@ def _predict_logits_for_dataset(
                         "verified_count": 0,
                         "mean": float("nan"),
                         "std": float("nan"),
-                        "match_rate": float("nan"),
-                        "label_gap_mean": float("nan"),
-                        "majority_gap": float("nan"),
+                        "majority_agreement": float("nan"),
+                        "majority_margin": float("nan"),
                     }
                     reasoning_feature_gap_stats = {
                         "l2": float("nan"),
@@ -645,15 +641,14 @@ def _predict_logits_for_dataset(
                                     verified_vals.append(label_value)
                             if verified_vals:
                                 verified_arr = np.asarray(verified_vals, dtype=np.float64)
-                                sample_label = float(batch_sample_labels[sample_idx_in_batch])
-                                majority_label = float(verified_arr.mean() >= 0.5)
+                                label_mean = float(verified_arr.mean())
+                                majority_label = float(label_mean >= 0.5)
                                 reasoning_label_stats = {
                                     "verified_count": int(verified_arr.size),
-                                    "mean": float(verified_arr.mean()),
+                                    "mean": label_mean,
                                     "std": float(verified_arr.std()),
-                                    "match_rate": float(np.mean(verified_arr == sample_label)),
-                                    "label_gap_mean": float(np.mean(np.abs(verified_arr - sample_label))),
-                                    "majority_gap": float(abs(majority_label - sample_label)),
+                                    "majority_agreement": float(np.mean(verified_arr == majority_label)),
+                                    "majority_margin": float(abs(label_mean - 0.5)),
                                 }
 
                         if isinstance(reasoning_feature_mean, torch.Tensor):

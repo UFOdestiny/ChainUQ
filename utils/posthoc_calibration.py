@@ -38,9 +38,8 @@ DEFAULT_REASONING_FEATURES = [
     "reasoning_claim_count",
     "reasoning_label_mean",
     "reasoning_label_std",
-    "reasoning_label_match_rate",
-    "reasoning_label_gap_mean",
-    "reasoning_label_majority_gap",
+    "reasoning_label_majority_agreement",
+    "reasoning_label_majority_margin",
     "reasoning_label_valid_count",
     "reasoning_feature_gap_l2",
     "reasoning_feature_gap_mean_abs",
@@ -60,24 +59,17 @@ VALID_POSTHOC_METHODS = (
     "platt_base",
     "temperature_scaling",
     "isotonic_regression",
-    "reasoning_logistic",
-    "reasoning_logistic_isotonic",
     "reasoning_logistic_blend",
-    "binwise_hybrid",
 )
 VALID_POSTHOC_METHODS_SET = set(VALID_POSTHOC_METHODS)
 REASONING_POSTHOC_METHODS = {
-    "reasoning_logistic",
-    "reasoning_logistic_isotonic",
     "reasoning_logistic_blend",
-    "binwise_hybrid",
 }
 
 VALID_POSTHOC_FEATURE_MODES = {"auto", "compact", "full"}
 DEFAULT_POSTHOC_FEATURE_MODE = "auto"
 DEFAULT_MIN_SAMPLES_FOR_FULL_FEATURES = 1500
 COMPACT_ONLY_REASONING_METHODS = {
-    "reasoning_logistic_isotonic",
     "reasoning_logistic_blend",
 }
 ANCHOR_METHOD_ORDER = (
@@ -219,9 +211,8 @@ def build_reasoning_feature_matrix_with_mode(
             reasoning_claim_count,
             float(reasoning_label_stats.get("mean", np.nan)),
             float(reasoning_label_stats.get("std", np.nan)),
-            float(reasoning_label_stats.get("match_rate", np.nan)),
-            float(reasoning_label_stats.get("label_gap_mean", np.nan)),
-            float(reasoning_label_stats.get("majority_gap", np.nan)),
+            float(reasoning_label_stats.get("majority_agreement", np.nan)),
+            float(reasoning_label_stats.get("majority_margin", np.nan)),
             float(reasoning_label_stats.get("verified_count", 0)),
             float(reasoning_feature_gap_stats.get("l2", np.nan)),
             float(reasoning_feature_gap_stats.get("mean_abs", np.nan)),
@@ -740,7 +731,7 @@ def _calibration_fit_meta(X: np.ndarray, y: np.ndarray, feature_names: list[str]
 
 
 def _resolve_effective_mode(requested_mode: str, X: np.ndarray, y: np.ndarray, feature_names: list[str]) -> tuple[str, str | None, dict[str, Any]]:
-    mode = str(requested_mode or "reasoning_logistic").strip().lower()
+    mode = str(requested_mode or "reasoning_logistic_blend").strip().lower()
     if mode not in VALID_POSTHOC_METHODS_SET:
         raise ValueError(
             f"Unsupported post-hoc method {mode!r}. Expected one of: {list(VALID_POSTHOC_METHODS)}"
@@ -789,7 +780,7 @@ def fit_posthoc_calibrator(
     bin_threshold: float = 0.2,
 ) -> dict[str, Any]:
     """Fit a post-hoc calibrator for hallucination risk (positive class = error)."""
-    requested_mode = str(mode or "reasoning_logistic").strip().lower()
+    requested_mode = str(mode or "reasoning_logistic_blend").strip().lower()
     X_tune = np.asarray(X_tune, dtype=np.float64)
     y_tune = np.asarray(y_tune, dtype=np.int64)
 
@@ -913,7 +904,7 @@ def fit_posthoc_calibrator(
 
 def apply_posthoc_calibrator(calibrator: dict[str, Any], X_eval: np.ndarray) -> np.ndarray:
     """Apply fitted calibrator and return calibrated error probabilities."""
-    mode = str(calibrator.get("mode", "reasoning_logistic")).strip().lower()
+    mode = str(calibrator.get("mode", "reasoning_logistic_blend")).strip().lower()
     if mode not in VALID_POSTHOC_METHODS_SET:
         raise ValueError(
             f"Unsupported saved post-hoc calibrator mode {mode!r}. "
