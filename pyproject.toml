@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "chainuq"
+version = "1.0.0"
+description = "ChainUQ: reasoning consistency-aware uncertainty quantification for large language models"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.10"
+dependencies = [
+    "torch>=2.4",
+    "transformers>=4.57",
+    "datasets>=3.0",
+    "numpy>=1.26",
+    "scipy>=1.12",
+    "scikit-learn>=1.4",
+    "matplotlib>=3.8",
+]
+
+[project.optional-dependencies]
+serve = ["vllm>=0.10", "openai>=1.40"]  # generation, CoT-UQ keywords, and the judge client
+dev = ["pytest>=8", "ruff>=0.6"]
+
+[tool.setuptools.packages.find]
+include = ["chainuq*"]
+
+[tool.ruff]
+line-length = 160
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]
+ignore = ["E731", "E741"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+filterwarnings = ["ignore:The PyTorch API of nested tensors:UserWarning"]
+
+[tool.ruff.lint.per-file-ignores]
+"chainuq/experiments/paper.py" = ["E501", "E702"]  # LaTeX captions and table cells
+"chainuq/experiments/benchmark.py" = ["E702"]
