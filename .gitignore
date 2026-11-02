@@ -1,72 +1,22 @@
-# Python
+# Local Python environment and caches
 __pycache__/
 *.py[cod]
-*$py.class
-*.so
-*.egg-info/
-dist/
-build/
-.eggs/
-*.egg
-
-# Virtual environments
-venv/
-env/
 .venv/
-
-# IDE and editor files
-.idea/
-.vscode/
-*.swp
-*.swo
-*~
-
-# System files
-.DS_Store
-Thumbs.db
-
-# Runtime outputs
-artifacts/
-outputs/
-checkpoints/
-logs/
-wandb/
-
-# Cached data and package caches
-.cache/
-hf_cache/
+venv/
 .pytest_cache/
-.mypy_cache/
 .ruff_cache/
-.ipynb_checkpoints/
 
-# Large data artifacts
-*.arrow
-*.parquet
-
-# Model weights
-*.pth
-*.pt
-*.bin
-*.safetensors
-*.gguf
-
-# Logs
-*.log
-*.err
-slurm-*.out
-
-# Secrets
+# Local configuration and editors
 .env
 .env.*
-.claude*
-latex
-.codex
-CLAUDE.md
-popllm
-.agent*
-analysis
+!.env.example
+.vscode/
+.claude/
 
-# Keep reproducible research pilots even when a global ignore excludes analysis/.
-!analysis/
-!analysis/*.py
+# Inputs and generated outputs
+artifacts/
+datasets/
+models
+logs/
+*.log
+latex/
