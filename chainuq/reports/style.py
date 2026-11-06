@@ -2,11 +2,14 @@
 
 # The same blue, teal and terracotta roles as the framework figure.
 INK, TEAL, BLUE, ORANGE = "#000000", "#287E78", "#356A8A", "#B45B22"
-FONT_SIZE = 10 * 72 / 72.27  # IJCAI body size: TeX points converted to PDF points
+# Lighter tones for secondary series (a second probe baseline, a raw score).
+LIGHT_BLUE, LIGHT_GRAY = "#8FB3CA", "#A3ACB2"
+FONT_SIZE = 10 * 72 / 72.27  # IJCAI body size (10 pt): TeX points converted to PDF points
 
 
 def paper_plot_style():
-    """10 pt labels at the actual 7 in paper / 3.375 in column widths."""
+    """Times New Roman at the 10 pt body size for every label, tick, legend and annotation; figures are drawn at the
+    width they take in the paper (7 in text, 3.375 in column) and included without scaling."""
     import matplotlib.pyplot as plt
     from matplotlib import font_manager
 

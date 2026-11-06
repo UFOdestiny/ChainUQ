@@ -1,7 +1,11 @@
 """Response-level analyses of the final method on frozen test predictions (``analysis.predictions``).
 
 * silent errors: wrong answers the judge accepts (every step valid and a chain verdict >= 0.5), and the AUROC of
-  the judge, the raw head score, ChainUQ-A and ChainUQ on the accepted and the flagged responses;
+  the judge, the raw head score, ChainUQ-A, ChainUQ and the probe + judge fusion baselines on the accepted and the
+  flagged responses;
+* fusion routing: the probe + judge fusion baselines under a judge-call budget, with the same rule as ChainUQ's
+  routing (``analysis.routing``): the routed responses get the fusion score and the others the probe score alone
+  (Platt-scaled on the validation split), routed by probe confidence (least certain first) or at random;
 * selective risk: area under the risk-coverage curve (AURC) of ChainUQ, ChainUQ-A and every baseline;
 * fusion bootstrap: paired bootstrap over test questions of the AUROC difference between ChainUQ and the stronger
   probe + judge fusion baseline (per-seed AUROCs averaged inside every resample);
@@ -20,11 +24,13 @@ from concurrent.futures import ProcessPoolExecutor
 
 import numpy as np
 from scipy.stats import rankdata
+from sklearn.linear_model import LogisticRegression
 
 from chainuq import metrics as M
 from chainuq.analysis import variants as D
 from chainuq.analysis.cache import ANALYSIS
 from chainuq.analysis.fusion import FUSION
+from chainuq.analysis.information import BUDGETS
 from chainuq.analysis.predictions import out_path
 from chainuq.artifacts import judge_path, pred_path, read_jsonl, root
 from chainuq.registry import SECOND_LABEL_JUDGE, TIER_A_BASELINES, TIER_B_BASELINES
@@ -91,6 +97,31 @@ def silent_errors(bb, ds):
             "chainuq_a": float(np.mean([M.auroc(y[m], p[m]) for p in A["p"]])),
             "chainuq": float(np.mean([M.auroc(y[m], p[m]) for p in B["p"]])),
         }
+        for k, variant in FUSION.items():
+            out[name][k] = float(np.mean([M.auroc(y[m], p[m]) for p in load(variant, bb, ds)["p"]]))
+    return out
+
+
+def fusion_routing(bb, ds):
+    """AUROC per judge-call budget of every fusion baseline (mean over head seeds), routed by probe confidence and
+    at random."""
+    out = {}
+    for k, v in FUSION.items():
+        zv, zt = load(v, bb, ds, "validation"), load(v, bb, ds)
+        y = zt["y"]
+        curves = {"conf": [], "random": []}
+        for i, seed in enumerate(zt["seeds"]):
+            platt = LogisticRegression().fit(zv["s"][i][:, None], zv["y"])
+            p0, p1 = platt.predict_proba(zt["s"][i][:, None])[:, 1], zt["p"][i]
+            orders = {"conf": np.argsort(np.abs(p0 - 0.5), kind="stable"), "random": np.random.default_rng(int(seed)).permutation(len(y))}
+            for name, o in orders.items():
+                au = []
+                for f in BUDGETS:
+                    m = np.zeros(len(y), bool)
+                    m[o[: int(round(f * len(y)))]] = True
+                    au.append(M.auroc(y, np.where(m, p1, p0)))
+                curves[name].append(au)
+        out[k] = {name: np.mean(c, 0).tolist() for name, c in curves.items()}
     return out
 
 
@@ -155,7 +186,7 @@ def main():
     p.add_argument("--workers", type=int, default=18)
     a = p.parse_args()
     jobs = [(bb, ds) for bb in D.BACKBONES for ds in D.DATASETS]
-    res = {"silent": {}, "aurc": {}, "bootstrap": {}, "relabel": {}}
+    res = {"silent": {}, "aurc": {}, "bootstrap": {}, "relabel": {}, "fusion_routing": {}}
     with ProcessPoolExecutor(a.workers) as ex:
         for (bb, ds), r in ex.map(fusion_bootstrap, jobs):
             res["bootstrap"][f"{bb}/{ds}"] = r
@@ -163,6 +194,7 @@ def main():
         key = f"{bb}/{ds}"
         res["silent"][key] = silent_errors(bb, ds)
         res["aurc"][key] = selective(bb, ds)
+        res["fusion_routing"][key] = fusion_routing(bb, ds)
         if ds in JUDGE_LABELED:
             res["relabel"][key] = second_labeler(bb, ds)
         print(key, flush=True)

@@ -78,12 +78,12 @@ def pool_tree(backbone, dataset, size):
     return big if size > 2000 and (big / "gen" / backbone / dataset / "train.jsonl").exists() else None
 
 
-def load_pool(backbone, dataset, size, mode, keys, device):
+def load_pool(backbone, dataset, size, mode, keys, device, judge=None):
     """Unlabeled train responses of one OOD domain with the judge's targets of ``mode`` (see ``HeadSpec``)."""
     root = pool_tree(backbone, dataset, size)
     with use_root(root) if root else nullcontext():
-        pool = load_samples(backbone, dataset, "train", feature_keys=keys, device=device, unlabeled=True)
-        items = to_items(pool, device=device, verdicts=load_verdicts(backbone, dataset, "train"))
+        pool = load_samples(backbone, dataset, "train", feature_keys=keys, device=device, unlabeled=True, judge=judge)
+        items = to_items(pool, device=device, verdicts=load_verdicts(backbone, dataset, "train", judge=judge))
     for it in items:
         it["labeled"] = False
         if mode == "verdict":
@@ -145,6 +145,7 @@ def main():
     p.add_argument(
         "--label_frac", type=float, default=1.0, help="fraction of source responses with a correctness label; PCS heads keep their judge targets on all"
     )
+    p.add_argument("--judge", default=None, help="judge whose train-split outputs are the imitation targets (default: the main judge)")
     p.add_argument("--tag", default="", help="suffix of the run name (checkpoints and predictions), e.g. -lf05")
     p.add_argument("--device", default="cuda", help="cuda, or cpu (e.g. to write predictions without a GPU)")
     p.add_argument("--predict_only", action="store_true", help="reload checkpoints and rewrite the predictions")
@@ -171,9 +172,9 @@ def main():
             if key not in loaded:
                 for k in [k for k in loaded if k[0] != "pools"]:
                     del loaded[k]
-                tr = load_samples(bb, SOURCE_DATASET, "train", feature_keys=keys, require_steps=False, device=device)
+                tr = load_samples(bb, SOURCE_DATASET, "train", feature_keys=keys, require_steps=False, device=device, judge=args.judge)
                 va = load_samples(bb, SOURCE_DATASET, "validation", feature_keys=keys, device=device)
-                verdicts = load_verdicts(bb, SOURCE_DATASET, "train") if spec.pcs else None
+                verdicts = load_verdicts(bb, SOURCE_DATASET, "train", judge=args.judge) if spec.pcs else None
                 loaded[key] = (to_items(tr[: args.max_train or None], device=device, verdicts=verdicts), to_items(va, device=device))
                 del tr, va
             train_items, val_items = (list(dict(it) for it in x) for x in loaded[key])
@@ -183,7 +184,7 @@ def main():
                 assert spec.pcs or spec.pool_mode == "pseudo", "unlabeled pools need PCS targets (or pseudo-labels)"
                 pkey = ("pools", tuple(keys), spec.pool_size, spec.pool_mode)
                 if pkey not in loaded:
-                    loaded[pkey] = [it for ds in POOL_DATASETS for it in load_pool(bb, ds, spec.pool_size, spec.pool_mode, keys, device)]
+                    loaded[pkey] = [it for ds in POOL_DATASETS for it in load_pool(bb, ds, spec.pool_size, spec.pool_mode, keys, device, args.judge)]
                 train_items = train_items + loaded[pkey]
             dims = head_dims(bb, train_items)
             if spec.arch == "saplma":

@@ -62,10 +62,10 @@ SEL_ROWS = [
     ("uhead", "UHead"),
     ("saplma", "SAPLMA"),
     ("selfcheck", "SelfCheckGPT$^*$"),
-    ("fusion-saplma", "SAPLMA + Judge-Final"),
-    ("fusion-uhead", "UHead + Judge-Final"),
-    ("chainuq_a", r"\mA"),
-    ("chainuq", r"\m"),
+    ("fusion-saplma", "SAPLMA + Judge"),
+    ("fusion-uhead", "UHead + Judge"),
+    ("chainuq_a", r"\m"),
+    ("chainuq", r"\mJ"),
     ("oracle", "Oracle"),
 ]
 
@@ -109,10 +109,8 @@ def selective_table(R):
         shade = r"\rowcolor{gray!20} " if k in ("chainuq", "chainuq_a") else ""
         lines.append(f"{shade}{name} & " + " & ".join(cells) + r" \\")
     cap = (
-        r"Selective risk: area under the risk--coverage curve (AURC $\downarrow$) when answers are kept in "
-        r"decreasing order of confidence (mean over seeds). OOD: mean over the five OOD datasets; Macro: mean over "
-        r"all six. Oracle ranks every correct answer first. $^*$Evaluated on the first 1,000 test questions of "
-        r"each dataset. Bold: best non-oracle method."
+        r"AURC$\downarrow$ per backbone (mean over seeds). OOD: mean over the five OOD datasets; Macro: over all six. "
+        r"Oracle ranks every correct answer first. $^*$First 1,000 test questions of each dataset. Bold: best non-oracle method."
     )
     return wrap_table(lines, cols, cap, "tab:selective", star=True, sep="4pt")
 
@@ -122,10 +120,10 @@ RELABEL_ROWS = [
     ("saplma", "tier_a", "SAPLMA"),
     ("uhead", "tier_a", "UHead"),
     ("judge-final", "tier_b", "Judge-Final"),
-    ("fusion-saplma", "tier_b", "SAPLMA + Judge-Final"),
-    ("fusion-uhead", "tier_b", "UHead + Judge-Final"),
-    ("chainuq-a", "tier_a", r"\mA"),
-    ("chainuq", "tier_b", r"\m"),
+    ("fusion-saplma", "tier_b", "SAPLMA + Judge"),
+    ("fusion-uhead", "tier_b", "UHead + Judge"),
+    ("chainuq-a", "tier_a", r"\m"),
+    ("chainuq", "tier_b", r"\mJ"),
 ]
 
 
@@ -162,10 +160,10 @@ def relabel_table():
         shade = r"\rowcolor{gray!20} " if k.startswith("chainuq") else ""
         lines.append(f"{shade}{name} & " + " & ".join(marks[(k, bb, i)] for bb, _ in BACKBONES for i in range(2)) + r" \\")
     cap = (
-        "AUROC against the correctness labels of the main judge (gpt-oss) and of the independent second labeler "
-        "(Qwen3-4B), averaged over the three judge-labeled datasets (HotpotQA, MuSiQue, bAbI). The two labelers agree "
+        "AUROC against the labels of the main judge (gpt-oss) and of a second labeler (Qwen3-4B), mean over HotpotQA, "
+        "MuSiQue, and bAbI. The labelers agree on "
         + ", ".join(f"{100 * agree[bb]:.1f}\\%" for bb, _ in BACKBONES)
-        + r" of the time on Llama, Qwen3, and Ministral. Calibrators are fit with the main labels. Bold: best per column."
+        + r" of the responses (Llama, Qwen3, Ministral). Calibrators use the main labels. Bold: best per column."
     )
     return wrap_table(lines, cols, cap, "tab:relabel", star=True, sep="4pt")
 
@@ -178,17 +176,17 @@ def err_at(y, conf, cov=0.8):
 
 
 MAIN_SEL = [
-    ("judge-final", "Judge-Final (JF)"),
+    ("judge-final", "Judge-Final"),
     ("uhead", "UHead"),
-    ("fusion-saplma", "SAPLMA + JF"),
-    ("fusion-uhead", "UHead + JF"),
-    ("chainuq_a", r"\mA"),
-    ("chainuq", r"\m"),
+    ("fusion-saplma", "SAPLMA + Judge"),
+    ("fusion-uhead", "UHead + Judge"),
+    ("chainuq_a", r"\m"),
+    ("chainuq", r"\mJ"),
 ]
 
 
 def selective_main_table():
-    """Macro AURC and the answer error rate at 80% coverage, per backbone."""
+    """Macro AURC per backbone and its mean over the backbones."""
     src = {"chainuq": D.CHAINUQ, "chainuq_a": D.CHAINUQ_A, **FUSION}
     vals = {}
     for bb, _ in BACKBONES:
@@ -205,27 +203,27 @@ def selective_main_table():
                 a.append(np.mean([aurc(y, s) for s in S]))
                 e.append(np.mean([err_at(y, s) for s in S]))
             vals[(k, bb)] = (float(np.mean(a)), float(np.mean(e)))
-    cols = "l" + " cc" * len(BACKBONES)
+    for k, _ in MAIN_SEL:
+        vals[(k, "mean")] = (float(np.mean([vals[(k, bb)][0] for bb, _ in BACKBONES])), None)
+    groups = [bb for bb, _ in BACKBONES] + ["mean"]
+    cols = "l" + " c" * len(groups)
     lines = [
         r"\toprule",
-        " & ".join([""] + [rf"\multicolumn{{2}}{{c}}{{\textbf{{{BB_SHORT[bb]}}}}}" for bb, _ in BACKBONES]) + r" \\",
-        " ".join(rf"\cmidrule(lr){{{2 + 2 * i}-{3 + 2 * i}}}" for i in range(len(BACKBONES))),
-        r"\textbf{Method} & " + " & ".join([r"AURC", r"Err@80"] * len(BACKBONES)) + r" \\",
+        r"\textbf{Method} & " + " & ".join(rf"\textbf{{{BB_SHORT.get(g, 'Mean')}}}" for g in groups) + r" \\",
         r"\midrule",
     ]
     marks = {}
-    for bb, _ in BACKBONES:
-        for i in range(2):
-            for (k, _), s in zip(MAIN_SEL, bold_best([vals[(k, bb)][i] for k, _ in MAIN_SEL], True)):
-                marks[(k, bb, i)] = s
+    for g in groups:
+        for (k, _), s in zip(MAIN_SEL, bold_best([vals[(k, g)][0] for k, _ in MAIN_SEL], True)):
+            marks[(k, g)] = s
     for k, name in MAIN_SEL:
         shade = r"\rowcolor{gray!20} " if k.startswith("chainuq") else ""
-        lines.append(f"{shade}{name} & " + " & ".join(marks[(k, bb, i)] for bb, _ in BACKBONES for i in range(2)) + r" \\")
+        lines.append(f"{shade}{name} & " + " & ".join(marks[(k, g)] for g in groups) + r" \\")
     cap = (
-        r"\textbf{\m has the lowest selective risk on every backbone.} Averaged over the six datasets: AURC$\downarrow$ and the error rate of the 80\% of "
-        r"answers kept with the highest confidence (Err@80$\downarrow$). Per-dataset results: Appendix~\ref{sec:app_selective}."
+        r"\textbf{\m has a lower selective risk than the judge, and \mJ the lowest on every backbone.} "
+        r"AURC$\downarrow$, mean over the six datasets."
     )
-    return wrap1(lines, cols, cap, "tab:selective_main", sep="1.6pt")
+    return wrap1(lines, cols, cap, "tab:selective_main", sep="4pt")
 
 
 def main():

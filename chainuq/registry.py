@@ -38,6 +38,8 @@ JUDGES = {
     "gptoss120b": ModelSpec("gpt-oss-120b", "openai", judge_request_kwargs={"reasoning_effort": "low"}),
     "gptoss120b-high": ModelSpec("gpt-oss-120b", "openai", judge_request_kwargs={"reasoning_effort": "high"}),
     "qwen3judge": ModelSpec("Qwen3-8B", "qwen", chat_template_kwargs={"enable_thinking": True}),
+    # Black-box API judge (Anthropic Messages API, no log-probabilities): chainuq.pipeline.judge_api.
+    "haiku": ModelSpec("claude-haiku-5-5", "anthropic"),
     # Second correctness labeler (label robustness).
     "qwen4b": ModelSpec("Qwen3-4B-Instruct-2507", "qwen"),
 }

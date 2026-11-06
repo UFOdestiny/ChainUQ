@@ -48,7 +48,7 @@ def readable_table(source: str) -> str:
     def layout(match):
         block = match.group(0)
         # Two-column floats are necessary for these comparisons at 9 pt.
-        single = "tab:search-space" in block
+        single = "tab:search-space" in block or "tab:significance}" in block
         main_summary = r"\label{tab:result}" in block or r"\label{tab:calibration}" in block
         block = re.sub(
             r"\\begin\{table\*?\}\[[^]]*\]", lambda _: r"\begin{table}[t]" if single else r"\begin{table*}[t]" if main_summary else r"\begin{table*}[tp]", block
@@ -65,28 +65,6 @@ def readable_table(source: str) -> str:
             block = re.sub(
                 r"\\begin\{tabular\}[^\n]*", lambda _: r"\begin{tabular}{@{}p{0.23\textwidth}p{0.27\textwidth}p{0.19\textwidth}p{0.25\textwidth}@{}}", block
             )
-        if "tab:significance}" in block:
-            table = re.search(r"\\begin\{tabular\}.*?\\end\{tabular\}", block, flags=re.S)
-            if table and any(len(line.split("&")) == 6 for line in table.group(0).splitlines()):
-                lines = table.group(0).splitlines()
-                panels = []
-                for setting, indices in ((r"\m vs.\ best baseline", (0, 1, 2, 3)), (r"\mA vs.\ best judge-free", (0, 1, 4, 5))):
-                    panel = [
-                        r"\begin{tabular}{@{}llcl@{}}",
-                        r"\toprule",
-                        rf"\multicolumn{{4}}{{c}}{{\textbf{{{setting}}}}} \\",
-                        r"\textbf{Backbone} & \textbf{Dataset} & $\Delta$AUROC [95\% CI] & vs. \\",
-                        r"\midrule",
-                    ]
-                    for line in lines[6:-1]:
-                        if "&" in line:
-                            cells = [s.strip() for s in line.removesuffix(r"\\").split("&")]
-                            panel.append(" & ".join(cells[i] for i in indices) + r" \\")
-                        else:
-                            panel.append(line)
-                    panel.append(r"\end{tabular}")
-                    panels.append("\n".join(panel))
-                block = block[: table.start()] + "\n\\par\\medskip\n".join(panels) + block[table.end() :]
         if "Risk@90" in block and "Risk@90: correctness-classification error" not in block:
             # Captions have nested braces, so insert before the caption's balanced close.
             start = block.index(r"\caption{") + len(r"\caption{")

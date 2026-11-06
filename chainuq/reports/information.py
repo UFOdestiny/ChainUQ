@@ -1,4 +1,4 @@
-"""Information-decomposition tables, in-text numbers, Figure 1, and the accepted-responses figure of the paper.
+"""Information-decomposition tables, numerical summaries, Figure 1, and the accepted-responses figure of the paper.
 
 Inputs (all fit on validation and scored on test unless stated), under ``CHAINUQ_ANALYSIS``:
   runs/<tag>.jsonl                            Stage-2 variant runs (``analysis.variants``)
@@ -7,8 +7,10 @@ Inputs (all fit on validation and scored on test unless stated), under ``CHAINUQ
   information/{babi_subtasks,unseen_domain}.json, responses.json    (``analysis.subtasks``, ``.unseen``, ``.responses``)
 and ``results/<backbone>/eval*.json`` (``pipeline.evaluate``, ``analysis.fusion``).
 
-Writes ``table/{decomposition,accounting_all,pools,pools_bb,attribution,bigjudge,ablation,grid}.tex``,
-``table/information_numbers.tex`` and ``fig/{teaser,accepted}.pdf`` under ``CHAINUQ_PAPER_DIR``.
+Writes ``table/{decomposition,accounting_all,pools,pools_bb,attribution,bigjudge,ablation,grid}.tex``
+and ``fig/{teaser_a,teaser_b,teaser_c,accepted}.pdf`` under ``CHAINUQ_PAPER_DIR``.
+Prints a numerical summary for manual verification and transcription. Manuscript numbers are
+handwritten literals; do not generate numeric LaTeX macros or update prose automatically.
 
     python -m chainuq.reports.information
 """
@@ -23,8 +25,6 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.lines import Line2D
-from matplotlib.patches import Patch
 
 from chainuq.analysis.cache import ANALYSIS
 from chainuq.analysis.variants import EVIDENCE_A as EVA
@@ -32,12 +32,12 @@ from chainuq.analysis.variants import EVIDENCE_B as EVB
 from chainuq.artifacts import results_dir
 from chainuq.config import PAPER_DIR
 from chainuq.registry import FINAL_HEAD, SOURCE_HEAD
-from chainuq.reports.style import INK, ORANGE, TEAL, paper_plot_style
+from chainuq.analysis.information import BUDGETS
+from chainuq.reports.style import BLUE, INK, LIGHT_BLUE, LIGHT_GRAY, ORANGE, TEAL, paper_plot_style
 
 BBS = ["llama", "qwen8b", "ministral"]
 DSS = ["hotpotqa", "musique", "strategyqa", "babi", "gsm8k", "math500"]
 DSNAME = {"hotpotqa": "HotpotQA", "musique": "MuSiQue", "strategyqa": "StrategyQA", "babi": "bAbI", "gsm8k": "GSM8K", "math500": "MATH-500"}
-GRAY = "#6C7880"
 T = ANALYSIS / "information"
 CHAINUQ_B, CHAINUQ_A = EVB + "@rlogs", EVA + "@rlogs"  # without the head key; the calibrator is R-Log with evidence-set selection
 RESPONSES = ANALYSIS / "responses.json"
@@ -127,7 +127,7 @@ def accounting_table(O):
         r"\setlength{\tabcolsep}{3pt}",
         r"\begin{tabular}{l ccc c}",
         r"\toprule",
-        r"\textbf{Dataset} & $\hat I(y;A\mid J)$ & \emph{accepted} & $\hat I(y;J\mid A)$ & $\Delta$AUROC \\",
+        r"\textbf{Dataset} & $I_{A|J}$ & Accepted & $I_{J|A}$ & $\Delta$AUROC \\",
         r"\midrule",
     ]
     agree, pos, acc_parts, tot_parts = 0, 0, [], []
@@ -152,10 +152,9 @@ def accounting_table(O):
         f"{np.mean([O[bb][d]['chainuq-a'] - O[bb][d]['judge-final'] for bb in BBS for d in DSS]):+.3f} \\\\",
         r"\bottomrule",
         r"\end{tabular}",
-        r"\caption{Information decomposition (nats; Eq.~\eqref{eq:accounting}), mean over the three backbones "
-        r"and 10 seeds. \emph{Accepted}: the part of $\hat I(y;A\mid J)$ contributed by the responses the judge accepts "
-        r"($v\geq0.5$), $\mathbb{P}(v{\geq}0.5)\,\hat I(y;A\mid J,v{\geq}0.5)$. "
-        r"$\Delta$AUROC: \mA minus Judge-Final.}",
+        r"\caption{Usable-information decomposition (nats; Eq.~\eqref{eq:accounting}), mean over backbones and 10 seeds. "
+        r"$I_{A|J}$ and $I_{J|A}$: probe beyond judge and judge beyond probe. Accepted: the part of $I_{A|J}$ from responses with $v\geq0.5$. "
+        r"$\Delta$AUROC: \m minus Judge-Final.}",
         r"\label{tab:decomposition}",
         r"\end{table}",
     ]
@@ -191,22 +190,20 @@ def macro(R, variant, seeds=None, metric="auroc", bbs=BBS):
 def pools_table():
     R = runs("attribution", "target_pool_controls")
     heads = [
-        ("No PCS", "chainuq-wo-pcs"),
-        ("PCS, source only", SOURCE_HEAD),
-        ("+ 6k, step labels only", "chainuq-pool-steps"),
-        ("+ 6k, verdict only", "chainuq-pool-verdict"),
-        (r"+ 6k unlabeled", FINAL_HEAD),
+        ("None", "chainuq-wo-pcs"),
+        ("Labeled source", SOURCE_HEAD),
+        ("Unlabeled: steps", "chainuq-pool-steps"),
+        ("Unlabeled: verdict level", "chainuq-pool-verdict"),
+        (r"Unlabeled: both (\m)", FINAL_HEAD),
     ]
     lines = [
         r"\begin{table}[t]",
         r"\centering",
         r"\small",
-        r"\setlength{\tabcolsep}{2pt}",
-        r"\resizebox{\columnwidth}{!}{\begin{tabular}{l ccc cc}",
+        r"\setlength{\tabcolsep}{2.8pt}",
+        r"\begin{tabular}{l ccc cc}",
         r"\toprule",
-        r" & \multicolumn{3}{c}{\textbf{Decomposition (nats)}} & \multicolumn{2}{c}{\textbf{AUROC}} \\",
-        r"\cmidrule(lr){2-4} \cmidrule(lr){5-6}",
-        r"\textbf{Head} & $\widehat{\mathrm{CE}}(L{\mid}A)$ & $\hat I(y;J{\mid}A)$ & $\hat I(y;A{\mid}J)$ & \mA & \m \\",
+        r"\textbf{Imitation} & $\epsilon_q$ & $I_{J|A}$ & $I_{A|J}$ & \m & \mJ \\",
         r"\midrule",
     ]
     vals = {}
@@ -218,10 +215,11 @@ def pools_table():
         lines.append(f"{name} & " + " & ".join(f"{x:.3f}" for x in vals[h]) + r" \\")
     lines += [
         r"\bottomrule",
-        r"\end{tabular}}",
-        r"\caption{\textbf{Better imitation of the judge lowers its residual information and raises judge-free AUROC.} "
-        r"Held-out imitation loss, decomposition terms (nats), and AUROC (macro over datasets and backbones, 3 seeds). "
-        r"Unlabeled: 6k questions per OOD domain, with both imitation targets unless noted.}",
+        r"\end{tabular}",
+        r"\caption{\textbf{Better imitation lowers the judge's residual and raises judge-free AUROC.} "
+        r"Macro, 3 seeds; all rows include chain features and the second probe. Unlabeled: 6k questions per OOD dataset "
+        r"added to the source. $\epsilon_q$: imitation loss, the held-out cross-entropy of the verdict level given $A$; "
+        r"$I_{J|A}$ and $I_{A|J}$: judge beyond probe and probe beyond judge (Eq.~\eqref{eq:accounting}; all three in nats); last two columns: AUROC.}",
         r"\label{tab:pools}",
         r"\end{table}",
     ]
@@ -235,21 +233,21 @@ def attribution_table():
     CB, CA = "B-u_reason-u_token-u_judge-vhat+ptrue@rlogs", "A-u_reason-u_token-vhat@rlogs"
     PB, PA = "B-u_reason-u_token-u_judge+ptrue+vq@rlogs", "A-u_reason-u_token+vq@rlogs"
     rows = [
-        (r"\multicolumn{4}{l}{\emph{With the judge}} \\", None),
+        (r"\multicolumn{4}{l}{\emph{Judge-free}} \\", None),
+        ("Probe alone (isotonic)", {"saplma": "S@iso#saplma", "uhead": "S@iso#uhead", "ours": f"S@iso#{SOURCE_HEAD}"}),
+        ("+ chain features", {"saplma": f"{CA}#saplma", "uhead": f"{CA}#uhead", "ours": f"{CA}#{SOURCE_HEAD}"}),
+        (r"+ imitation, labeled source", {"uhead": f"{PA}#uhead-pcs", "ours": f"{PA}#{SOURCE_HEAD}"}),
+        (r"+ imitation, unlabeled questions", {"uhead": f"{PA}#uhead-pcs-pool6k", "ours": f"{PA}#{FINAL_HEAD}"}),
+        (r"+ second probe", {"uhead": f"{CHAINUQ_A}#uhead-pcs-pool6k", "ours": f"{CHAINUQ_A}#{FINAL_HEAD}"}),
+        (r"\midrule \multicolumn{4}{l}{\emph{With the judge}} \\", None),
         (
-            "Probe + judge (LR)",
+            "Probe--judge fusion",
             {"saplma": "S+verdict+ptrue@lrsel#saplma", "uhead": "S+verdict+ptrue@lrsel#uhead", "ours": f"S+verdict+ptrue@lrsel#{SOURCE_HEAD}"},
         ),
-        ("+ chain features (R-Log)", {"saplma": f"{CB}#saplma", "uhead": f"{CB}#uhead", "ours": f"{CB}#{SOURCE_HEAD}"}),
-        (r"+ PCS $\hat v$, labeled source", {"uhead": f"{PB}#uhead-pcs", "ours": f"{PB}#{SOURCE_HEAD}"}),
-        (r"+ unlabeled imitation", {"uhead": f"{PB}#uhead-pcs-pool6k", "ours": f"{PB}#{FINAL_HEAD}"}),
-        (r"+ second probe (\m)", {"uhead": f"{CHAINUQ_B}#uhead-pcs-pool6k", "ours": f"{CHAINUQ_B}#{FINAL_HEAD}"}),
-        (r"\midrule \multicolumn{4}{l}{\emph{Judge-free}} \\", None),
-        ("Probe alone (ISO)", {"saplma": "S@iso#saplma", "uhead": "S@iso#uhead", "ours": f"S@iso#{SOURCE_HEAD}"}),
-        ("+ chain features (R-Log)", {"saplma": f"{CA}#saplma", "uhead": f"{CA}#uhead", "ours": f"{CA}#{SOURCE_HEAD}"}),
-        (r"+ PCS $\hat v$, labeled source", {"uhead": f"{PA}#uhead-pcs", "ours": f"{PA}#{SOURCE_HEAD}"}),
-        (r"+ unlabeled imitation", {"uhead": f"{PA}#uhead-pcs-pool6k", "ours": f"{PA}#{FINAL_HEAD}"}),
-        (r"+ second probe (\mA)", {"uhead": f"{CHAINUQ_A}#uhead-pcs-pool6k", "ours": f"{CHAINUQ_A}#{FINAL_HEAD}"}),
+        ("+ chain features", {"saplma": f"{CB}#saplma", "uhead": f"{CB}#uhead", "ours": f"{CB}#{SOURCE_HEAD}"}),
+        (r"+ imitation, labeled source", {"uhead": f"{PB}#uhead-pcs", "ours": f"{PB}#{SOURCE_HEAD}"}),
+        (r"+ imitation, unlabeled questions", {"uhead": f"{PB}#uhead-pcs-pool6k", "ours": f"{PB}#{FINAL_HEAD}"}),
+        (r"+ second probe", {"uhead": f"{CHAINUQ_B}#uhead-pcs-pool6k", "ours": f"{CHAINUQ_B}#{FINAL_HEAD}"}),
     ]
     lines = [
         r"\begin{table}[t]",
@@ -277,9 +275,9 @@ def attribution_table():
     lines += [
         r"\bottomrule",
         r"\end{tabular}",
-        r"\caption{\textbf{Chain features and label-free imitation give the largest gains, for UHead as for our head.} "
-        r"Macro AUROC over datasets and backbones (10 seeds; UHead with PCS and the source-only head: 3 seeds); each row "
-        r"adds to the one above. LR: logistic regression; ISO: isotonic regression.}",
+        r"\caption{\textbf{Chain features and label-free imitation give the largest gains, for UHead as for our probe.} "
+        r"Macro AUROC; each row adds to the one above, calibrated by ours from ``+ chain features'' on; our last rows are "
+        r"\m and \mJ. 10 seeds (3 for UHead imitation and our first three rows).}",
         r"\label{tab:attribution}",
         r"\end{table}",
     ]
@@ -323,16 +321,22 @@ def bigjudge_table():
         r"\begin{table}[t]",
         r"\centering",
         r"\small",
-        r"\setlength{\tabcolsep}{3pt}",
+        r"\setlength{\tabcolsep}{2pt}",
         r"\begin{tabular}{l ccc c}",
         r"\toprule",
-        r"\textbf{Judge} & Judge only & Fusion & \m & $\hat I(y;A\mid J)$ \\",
+        r"\textbf{Judge} & Judge only & Fusion & \mJ & $I_{A|J}$ \\",
         r"\midrule",
     ]
     out = {}
     RQ, IQ = runs("cross_family_judge"), info_rows(T / f"decomposition_{FINAL_HEAD}_qwen3judge.json")
-    keys = {"gpt-oss-20b": "gptoss", "gpt-oss-120b": "gptoss120b", "Qwen3-8B, thinking": "qwen3judge"}
-    for name, R, I in (("gpt-oss-20b", R20, I20), ("gpt-oss-120b", R120, I120), ("Qwen3-8B, thinking", RQ, IQ)):
+    RH, IH = runs("haiku_swap_haiku", "haiku_swap3_haiku"), info_rows(T / f"decomposition_{FINAL_HEAD}_haiku.json")
+    keys = {"gpt-oss-20b": "gptoss", "gpt-oss-120b": "gptoss120b", "Qwen3-8B, thinking": "qwen3judge", "Claude Haiku 5.5 (API)": "haiku"}
+    for name, R, I in (
+        ("gpt-oss-20b", R20, I20),
+        ("gpt-oss-120b", R120, I120),
+        ("Qwen3-8B, thinking", RQ, IQ),
+        ("Claude Haiku 5.5 (API)", RH, IH),
+    ):
         jf = judge_auroc(keys[name])
         fus = max(macro(R, f"S+verdict+ptrue@lrsel#{h}") for h in ("saplma", "uhead"))
         b = macro(R, f"{CHAINUQ_B}#{FINAL_HEAD}")
@@ -341,9 +345,8 @@ def bigjudge_table():
     lines += [
         r"\bottomrule",
         r"\end{tabular}",
-        r"\caption{\textbf{The internal states add to every judge.} Judge swap at inference (macro AUROC, 10 seeds); the head "
-        r"keeps its gpt-oss-20b training. Judge only: logistic regression on $v$ and $\mathrm{logit}\,p_{\mathrm{true}}$; "
-        r"Fusion: the stronger of SAPLMA and UHead with the same judge outputs.}",
+        r"\caption{\textbf{The internal states add to every judge.} Macro AUROC with the judge swapped at inference; the probe "
+        r"keeps its gpt-oss-20b training. Judge only: logistic regression on $J$ (Judge-Final in Table~\ref{tab:result} uses $v$ alone); Fusion: the stronger probe--judge fusion; $I_{A|J}$: probe beyond judge (nats; Eq.~\eqref{eq:accounting}).}",
         r"\label{tab:bigjudge}",
         r"\end{table}",
     ]
@@ -362,8 +365,21 @@ def routing():
     O_ = official()
     fus_ = np.mean([max(np.mean([O_[bb][d][k] for d in DSS]) for k in ("fusion-saplma", "fusion-uhead")) for bb in BBS])
     mac("vRouteCross", str(int(10 * next(i for i, v in enumerate(R["eig"]) if v > fus_))), "{}")
+    mac("vRouteFull", fus_)
     gap = np.abs(np.mean([r["auroc"]["eig"] for r in rows], 0) - np.mean([r["auroc"]["eig-mix"] for r in rows], 0)).max()
     mac("vRouteMixGap", gap)
+    # probe + judge fusion under the same budget (``analysis.responses``): the stronger of the two fusions per
+    # backbone and budget, routed by the probe's confidence; at 100% it equals the fusion of Table 1
+    F = json.loads(RESPONSES.read_text())["fusion_routing"]
+    R["fusion"] = np.mean(
+        [np.max([np.mean([F[f"{bb}/{d}"][k]["conf"] for d in DSS], 0) for k in ("fusion-saplma", "fusion-uhead")], 0) for bb in BBS], 0
+    )
+    assert abs(R["fusion"][-1] - fus_) < 1e-9
+    assert (R["eig"] > R["fusion"]).all()
+    below = lambda v: str(int(round(100 * max(f for f, u in zip(BUDGETS, R["fusion"]) if u < v))))
+    mac("vRouteFusHalf", R["fusion"][5])
+    mac("vRouteFreeMatch", below(R["eig"][0]), "{}")  # fusion budget that ChainUQ exceeds without any judge call
+    mac("vRouteThirtyMatch", below(R["eig"][3]), "{}")  # ... and with 30% of the calls
     return R
 
 
@@ -390,102 +406,100 @@ def reliability():
     return out
 
 
-def teaser(I, route):
-    paper_plot_style()
-    rel = reliability()
-    height, width, gap = 132, 160, 12
-    fig = plt.figure(figsize=(7, height / 72))
-    fw, fh = fig.get_size_inches() * 72
-    titles = ("Confidence hides risk", "Who knows what", "Calling the judge selectively")
-    axes = []
-    for i in range(3):
-        origin = i * (width + gap)
-        left, aw = (31, 125) if i == 0 else (37, 119)
-        ax = fig.add_axes([(origin + left) / fw, 29 / fh, aw / fw, 80 / fh])
-        ax.tick_params(length=2.5, pad=2, direction="in")
-        ax.xaxis.labelpad = ax.yaxis.labelpad = 3
-        fig.text((origin + 1) / fw, 123 / fh, f"({chr(97 + i)}) {titles[i]}", weight="bold", color=INK, va="center")
-        axes.append(ax)
-    a = axes[0]
+# Figure 1: three subfigures of the 7 in text width, each included at its natural size so that every label is set
+# at the 10 pt body size; equal heights and bottom margins align the three axes.
+PANEL_H, PANEL_BOTTOM, PANEL_TOP = 1.5, 0.37, 0.06
+DSABBR = {"hotpotqa": "HQA", "musique": "MSQ", "strategyqa": "SQA", "babi": "bAbI", "gsm8k": "GSM", "math500": "MATH"}
+
+
+def panel(width, left, right=0.08, height=PANEL_H, bottom=PANEL_BOTTOM, top=PANEL_TOP):
+    """A one-axes figure of the given size in inches, with margins in inches."""
+    fig = plt.figure(figsize=(width, height))
+    ax = fig.add_axes([left / width, bottom / height, (width - left - right) / width, (height - bottom - top) / height])
+    ax.tick_params(length=2.5, pad=2)
+    ax.xaxis.labelpad = ax.yaxis.labelpad = 2
+    return fig, ax
+
+
+def save(fig, name):
+    out = PAPER_DIR / "fig" / name
+    fig.savefig(out)
+    plt.close(fig)
+    print(out)
+
+
+def teaser_a(rel):
+    """(a) accuracy per probe-confidence bin, split by the judge verdict; dashed ellipses mark where each source is
+    overconfident: accepted answers with low probe confidence, and rejected answers with high probe confidence."""
+    fig, a = panel(2.2, left=0.42)
+    ylim = (0, 1.25)  # headroom above accuracy 1 holds the line and ellipse labels
+    a.set(xlim=(0, 1), ylim=ylim, xticks=[0.5, 1], yticks=[0, 0.5, 1], xlabel="Probe confidence", ylabel="Accuracy")
+    box = a.get_position()
+    sx, sy = box.width * fig.get_figwidth(), box.height * fig.get_figheight() / (ylim[1] - ylim[0])  # inches per unit
+
+    def ellipse(p, q, pad=0.09, minor=0.075):
+        """Dashed ellipse (inches: round on the page) whose major axis runs through the points p and q."""
+        (x0, y0), (x1, y1) = p, q
+        dx, dy = (x1 - x0) * sx, (y1 - y0) * sy
+        ang, major = np.arctan2(dy, dx), np.hypot(dx, dy) / 2 + pad
+        t = np.linspace(0, 2 * np.pi, 200)
+        u, v = major * np.cos(t), minor * np.sin(t)
+        xs = (x0 + x1) / 2 + (u * np.cos(ang) - v * np.sin(ang)) / sx
+        ys = (y0 + y1) / 2 + (u * np.sin(ang) + v * np.cos(ang)) / sy
+        a.plot(xs, ys, color=INK, lw=0.7, ls=(0, (3, 2)))
+
+    hx, hy = rel["high"]
+    lx, ly = rel["low"]
+    ellipse((hx[0], hy[0]), (hx[1], hy[1]))  # accepted, low probe confidence
+    ellipse((lx[-2], ly[-2]), (lx[-1], ly[-1]))  # rejected, high probe confidence
     for name, color, marker, ls in (("low", ORANGE, "s", "--"), ("high", TEAL, "o", "-")):
         a.plot(*rel[name], color=color, marker=marker, ms=3.8, lw=1.25, ls=ls, markeredgecolor="white", markeredgewidth=0.4)
-    a.set(xlim=(0, 1), ylim=(0, 1.02), xticks=[0.5, 1], yticks=[0, 0.5, 1], xlabel="Head confidence", ylabel="Accuracy")
-    a.text(0.04, 0.92, r"Judge $\geq 0.5$", transform=a.transAxes, color=TEAL, va="top")
-    a.text(0.38, 0.04, r"Judge $<0.5$", transform=a.transAxes, color=ORANGE, va="bottom")
-    b = axes[1]
-    x = np.arange(len(DSS))
+    arrow = dict(arrowstyle="-|>", color=INK, lw=0.7, mutation_scale=6, shrinkA=1, shrinkB=1)
+    a.text(0.99, 1.23, "Judge accepts", color=TEAL, va="top", ha="right")
+    a.text(0.98, 0.03, "Judge rejects", color=ORANGE, va="bottom", ha="right")
+    a.annotate("Judge overconf.", xy=(0.12, 0.41), xytext=(0.03, 0.92), va="top", arrowprops=arrow)
+    a.annotate("Probe overconf.", xy=(0.69, 0.4), xytext=(0.99, 0.64), va="top", ha="right", arrowprops={**arrow, "relpos": (0.1, 0)})
+    save(fig, "teaser_a.pdf")
+
+
+def teaser_b(I):
+    """(b) usable information of each source beyond the other, per dataset (horizontal bars: the labels stay at 10 pt),
+    with one note per regime: the judge recomputes math, while QA errors read fluently."""
+    fig, b = panel(2.35, left=0.47)
+    y = np.arange(len(DSS))[::-1]
     pa = [np.mean([I[bb, d]["I_AgJ"] for bb in BBS]) for d in DSS]
     pj = [np.mean([I[bb, d]["I_JgA"] for bb in BBS]) for d in DSS]
-    b.bar(x - 0.19, pa, width=0.36, color=TEAL)
-    b.bar(x + 0.19, pj, width=0.36, color=ORANGE)
-    b.set(xticks=x, xticklabels=["HQA", "MSQ", "SQA", "bAbI", "GSM", "MATH"], ylabel="Information (nats)")
-    b.tick_params(axis="x", length=0, labelsize=6.5)
-    b.legend(
-        handles=[Patch(color=TEAL, label=r"$I(y;A\mid J)$: probe beyond judge"), Patch(color=ORANGE, label=r"$I(y;J\mid A)$: judge beyond probe")],
-        loc="upper left",
-        frameon=False,
-        handlelength=0.8,
-        handletextpad=0.3,
-        borderaxespad=0.1,
-        labelspacing=0.15,
-        fontsize=7.5,
-    )
-    b.set_ylim(0, max(max(pa), max(pj)) * 1.45)
-    c = axes[2]
-    xs = 100 * np.linspace(0, 1, len(route["eig"]))
-    c.plot(xs, route["random"], color=GRAY, lw=1.1, ls="--", marker="o", ms=2.6, markerfacecolor="white")
-    c.plot(xs, route["eig"], color=TEAL, lw=1.3, marker="D", ms=2.8, markeredgecolor="white", markeredgewidth=0.3)
-    # baselines at their judge budget: the probes call no judge, the judge and the fusions call it on every response
+    b.barh(y + 0.19, pa, height=0.36, color=TEAL, label="Probe beyond judge")
+    b.barh(y - 0.19, pj, height=0.36, color=ORANGE, label="Judge beyond probe")
+    b.set(yticks=y, yticklabels=[DSABBR[d] for d in DSS], ylim=(-0.6, len(DSS) - 0.4), xlabel="Usable information (nats)")
+    b.set_xlim(0, max(max(pa), max(pj)) * 1.8)  # room for the legend and the notes to the right of the bars
+    b.tick_params(axis="y", length=0)
+    b.legend(loc="upper right", frameon=False, handlelength=0.8, handletextpad=0.3, borderaxespad=0.0, labelspacing=0.2)
+    right = b.get_xlim()[1] * 0.99
+    row = {d: yy for d, yy in zip(DSS, y)}
+    b.text(right, (row["strategyqa"] + row["babi"]) / 2, "QA: errors hide\nin fluent text", color=TEAL, ha="right", va="center", linespacing=0.95)
+    b.text(right, (row["gsm8k"] + row["math500"]) / 2, "Math: judge\nrecomputes", color=ORANGE, ha="right", va="center", linespacing=0.95)
+    save(fig, "teaser_b.pdf")
+
+
+def teaser(I, route):
+    paper_plot_style()
+    teaser_a(reliability())
+    teaser_b(I)
+    # (c) AUROC per judge-call budget: ChainUQ (information-gain routing) and probe + judge fusion (confidence routing)
+    fig, c = panel(2.25, left=0.47)
+    xs = 100 * np.asarray(BUDGETS)
+    c.plot(xs, route["fusion"], color=BLUE, lw=1.25, marker="^", ms=3.4, markeredgecolor="white", markeredgewidth=0.3)
+    c.plot(xs, route["eig"], color=TEAL, lw=1.25, marker="D", ms=3.0, markeredgecolor="white", markeredgewidth=0.3)
     O = official()
-    mac_ = lambda k: np.mean([np.mean([O[bb][d][k] for d in DSS]) for bb in BBS])
-    probes = ("saplma", "uhead", "factoscope", "lookback", "meanpool-mlp", "attnpool-mlp")
-    pts = [
-        (0, max(mac_(k) for k in probes if k in O["llama"]["hotpotqa"]), "Best probe", "v"),
-        (100, mac_("judge-final"), "Judge-Final", "s"),
-        (100, max(mac_("fusion-saplma"), mac_("fusion-uhead")), "Probe + judge fusion", "^"),
-    ]
-    for x0, y0, name, m in pts:
-        c.plot([x0], [y0], linestyle="none", marker=m, ms=4.2, color=ORANGE, markeredgecolor="white", markeredgewidth=0.4, clip_on=False, zorder=4)
-        if name == "Probe + judge fusion":  # labeled at the left end of its reference line, clear of the curves
-            c.text(97, y0 - 0.0055, "Probe + judge", fontsize=6.4, color=ORANGE, va="center", ha="right")
-            continue
-        dy = 0
-        c.text(x0 + (5 if x0 == 0 else -5), y0 + dy, name, fontsize=6.4, color=ORANGE, va="center", ha="left" if x0 == 0 else "right")
-    c.axhline(max(mac_("fusion-saplma"), mac_("fusion-uhead")), color=ORANGE, lw=0.6, ls=":", zorder=1)
-    lo, hi = min(y for _, y, _, _ in pts), route["eig"][-1]
-    c.set(xlim=(-4, 104), xticks=[0, 50, 100], ylim=(lo - 0.006, hi + 0.006), xlabel="Responses sent to the judge (%)", ylabel="AUROC")
-    key = lambda label, color, marker, hollow=False: Line2D(
-        [],
-        [],
-        linestyle="none",
-        marker=marker,
-        markersize=4.5,
-        markeredgecolor=color,
-        markeredgewidth=0.7,
-        markerfacecolor="white" if hollow else color,
-        label=label,
-    )
-    c.legend(
-        handles=[key("ChainUQ, info.-gain routing", TEAL, "D"), key("ChainUQ, random routing", GRAY, "o", hollow=True)],
-        loc="lower center",
-        bbox_to_anchor=(0.56, 0.12),
-        frameon=True,
-        facecolor="white",
-        edgecolor="none",
-        framealpha=0.9,
-        handlelength=0.7,
-        handletextpad=0.25,
-        borderpad=0.15,
-        borderaxespad=0.2,
-        labelspacing=0.12,
-        fontsize=7,
-    )
-    for ax in axes:
-        for side in ("top", "right"):
-            ax.spines[side].set_visible(False)
-    out = PAPER_DIR / "fig" / "teaser.pdf"
-    fig.savefig(out)
-    print(out)
+    jf = np.mean([np.mean([O[bb][d]["judge-final"] for d in DSS]) for bb in BBS])
+    c.plot([100], [jf], linestyle="none", marker="s", ms=4.2, color=ORANGE, markeredgecolor="white", markeredgewidth=0.4, clip_on=False, zorder=4)
+    c.text(4, route["eig"][0] - 0.004, "JIP + Judge", color=TEAL, va="top")
+    c.text(35, route["fusion"][4] - 0.02, "Probe–judge fusion", color=BLUE, va="top")
+    c.text(95, jf, "Judge-Final", color=ORANGE, va="center", ha="right")
+    c.set(xlim=(-4, 104), xticks=[0, 50, 100], ylim=(route["fusion"][0] - 0.008, route["eig"][-1] + 0.012), yticks=[0.8, 0.85, 0.9])
+    c.set(xlabel="Judge calls (%)", ylabel="AUROC")
+    save(fig, "teaser_c.pdf")
 
 
 def accounting_all_table(O):
@@ -494,28 +508,24 @@ def accounting_all_table(O):
         r"\begin{table}[t]",
         r"\centering",
         r"\small",
-        r"\setlength{\tabcolsep}{2.5pt}",
-        r"\begin{tabular}{ll ccc c}",
+        r"\setlength{\tabcolsep}{4pt}",
+        r"\begin{tabular}{l ccc c}",
         r"\toprule",
-        r"\textbf{Backbone} & \textbf{Dataset} & $\hat I(y;A{\mid}J)$ & \emph{accepted} & $\hat I(y;J{\mid}A)$ & $\Delta$AUROC \\",
-        r"\midrule",
+        r"\textbf{Dataset} & $I_{A|J}$ & Accepted & $I_{J|A}$ & $\Delta$AUROC \\",
     ]
     names = {"llama": "Llama", "qwen8b": "Qwen3", "ministral": "Ministral"}
-    for bi, bb in enumerate(BBS):
-        for di, d in enumerate(DSS):
+    for bb in BBS:  # one block per backbone, headed by its name (a backbone column would not fit the column width)
+        lines += [r"\midrule", rf"\multicolumn{{5}}{{l}}{{\emph{{{names[bb]}}}}} \\"]
+        for d in DSS:
             m = I[bb, d]
-            tot = m["acc_part"] + m["rej_part"]
-            f"{100 * m['acc_part'] / tot:.0f}\\%" if tot > 0 else "--"
             lines.append(
-                f"{names[bb] if di == 0 else ''} & {DSNAME[d]} & {m['I_AgJ']:.3f} & {m['acc_part']:.3f} & {m['I_JgA']:.3f} & "
+                f"{DSNAME[d]} & {m['I_AgJ']:.3f} & {m['acc_part']:.3f} & {m['I_JgA']:.3f} & "
                 f"{O[bb][d]['chainuq-a'] - O[bb][d]['judge-final']:+.3f} \\\\"
             )
-        if bi < 2:
-            lines.append(r"\midrule")
     lines += [
         r"\bottomrule",
         r"\end{tabular}",
-        r"\caption{Information decomposition per backbone and dataset (nats; 10 seeds). Columns as in "
+        r"\caption{Usable-information decomposition per backbone and dataset (nats; 10 seeds). Columns as in "
         r"Table~\ref{tab:decomposition}.}",
         r"\label{tab:accounting_all}",
         r"\end{table}",
@@ -525,7 +535,7 @@ def accounting_all_table(O):
 
 def pools_bb_table():
     R = runs("attribution")
-    heads = [("No PCS", "chainuq-wo-pcs"), ("PCS, source", SOURCE_HEAD), ("+ 2k unlab.", "chainuq-pool2k"), (r"+ 6k unlab.", FINAL_HEAD)]
+    heads = [("None", "chainuq-wo-pcs"), ("Source only", SOURCE_HEAD), ("+ 2k unlab.", "chainuq-pool2k"), (r"+ 6k unlab.", FINAL_HEAD)]
     names = {"llama": "Llama", "qwen8b": "Qwen3", "ministral": "Ministral"}
     lines = [
         r"\begin{table}[t]",
@@ -534,7 +544,7 @@ def pools_bb_table():
         r"\setlength{\tabcolsep}{2pt}",
         r"\resizebox{\columnwidth}{!}{\begin{tabular}{ll ccc cc}",
         r"\toprule",
-        r"\textbf{Backbone} & \textbf{Head} & $\widehat{\mathrm{CE}}(L{\mid}A)$ & $\hat I(y;J{\mid}A)$ & $\hat I(y;A{\mid}J)$ & \mA & \m \\",
+        r"\textbf{Backbone} & \textbf{Imitation} & $\epsilon_q$ & $I_{J|A}$ & $I_{A|J}$ & \m & \mJ \\",
         r"\midrule",
     ]
     for bi, bb in enumerate(BBS):
@@ -563,10 +573,10 @@ def ablation_table():
     R = runs("attribution")
     H = FINAL_HEAD
     rows = [
-        (r"\m / \mA", f"{EVB}@rlogs#{H}", f"{EVA}@rlogs#{H}"),
-        ("R-Log without evidence selection", f"{EVB}@rlog#{H}", f"{EVA}@rlog#{H}"),
-        ("LR, same inputs", f"{EVB}@lrsel#{H}", f"{EVA}@lrsel#{H}"),
-        ("GBM, same inputs", f"{EVB}@gbm#{H}", f"{EVA}@gbm#{H}"),
+        (r"\m / \mJ", f"{EVB}@rlogs#{H}", f"{EVA}@rlogs#{H}"),
+        ("Calibrator without evidence selection", f"{EVB}@rlog#{H}", f"{EVA}@rlog#{H}"),
+        ("Logistic regression, same inputs", f"{EVB}@lrsel#{H}", f"{EVA}@lrsel#{H}"),
+        ("Boosted trees, same inputs", f"{EVB}@gbm#{H}", f"{EVA}@gbm#{H}"),
         (r"$-$ $p_{\mathrm{true}}$", f"{EVB}-ptrue@rlogs#{H}", None),
         (r"$-$ imitation outputs $\hat v,\,q_\theta(L)$", f"{EVB}-vhat-vq@rlogs#{H}", f"{EVA}-vhat-vq@rlogs#{H}"),
         (r"$-$ second probe", f"B-u_reason-u_token-u_judge+ptrue+vq@rlogs#{H}", f"A-u_reason-u_token+vq@rlogs#{H}"),
@@ -581,23 +591,22 @@ def ablation_table():
         r"\setlength{\tabcolsep}{2.2pt}",
         r"\resizebox{\columnwidth}{!}{\begin{tabular}{l ccc ccc}",
         r"\toprule",
-        r" & \multicolumn{3}{c}{\textbf{With judge}} & \multicolumn{3}{c}{\textbf{Judge-free}} \\",
+        r" & \multicolumn{3}{c}{\textbf{Judge-free}} & \multicolumn{3}{c}{\textbf{With judge}} \\",
         r"\cmidrule(lr){2-4} \cmidrule(lr){5-7}",
         r"\textbf{Variant} & AUROC$\uparrow$ & NLL$\downarrow$ & ECE$\downarrow$ & AUROC$\uparrow$ & NLL$\downarrow$ & ECE$\downarrow$ \\",
         r"\midrule",
     ]
     for name, vb, va in rows:
         cells = []
-        for v in (vb, va):
+        for v in (va, vb):
             for metric in ("auroc", "nll", "ece"):
                 cells.append(f3(macro(R, v, metric=metric)) if v and v in R else "--")
         lines.append(f"{name} & " + " & ".join(cells) + r" \\")
     lines += [
         r"\bottomrule",
         r"\end{tabular}}",
-        r"\caption{Evidence and calibrator ablations of the final method (macro over datasets and backbones, "
-        r"10 seeds). Full evidence adds the step-score summaries, whole-response token statistics, and (with the "
-        r"judge) the judge's step labels.}",
+        r"\caption{Evidence and calibrator ablations (macro over datasets and backbones, 10 seeds). Full evidence adds "
+        r"step-score summaries, whole-response token statistics, and (with the judge) the judge's step labels.}",
         r"\label{tab:ablation}",
         r"\end{table}",
     ]
@@ -688,7 +697,7 @@ def grid_table():
     """Label grid: the head and the second probe (SAPLMA) see the same fraction of the source labels."""
     G, R = runs("calibration_grid"), runs("calibration_grid_extended")
     bbs = ["llama", "qwen8b"]
-    heads = [("No PCS", "chainuq-wo-pcs"), ("PCS, source", SOURCE_HEAD), ("+ 6k unlabeled", FINAL_HEAD)]
+    heads = [("No imitation", "chainuq-wo-pcs"), ("Source only", SOURCE_HEAD), ("+ 6k unlabeled", FINAL_HEAD)]
 
     def cell(frac, h, judge=False):
         if frac == "100":
@@ -713,8 +722,8 @@ def grid_table():
     lines += [
         r"\bottomrule",
         r"\end{tabular}",
-        r"\caption{Judge-free AUROC of \mA when the head and the second probe see 1--100\% of the HotpotQA labels; "
-        r"R-Log uses the target validation labels in every row (Llama and Qwen3, 3 seeds).}",
+        r"\caption{Judge-free AUROC when the probe and the second probe see 1--100\% of the HotpotQA labels; the "
+        r"calibrator uses the target validation labels in every row (Llama and Qwen3, 3 seeds).}",
         r"\label{tab:grid}",
         r"\end{table}",
     ]
@@ -757,26 +766,70 @@ def think_macros():
 
 
 def accepted_figure():
-    """Errors the judge lets through: AUROC on the responses the judge accepts (v >= 0.5), per dataset, mean over
-    the three backbones (judge score vs. the head's raw score vs. ChainUQ)."""
+    """Errors the judge lets through: AUROC on the responses the judge accepts, per dataset, mean over the three
+    backbones (judge score, the head's raw score, the probe + judge fusions, ChainUQ). One column wide at natural size."""
     paper_plot_style()
     S = json.loads(RESPONSES.read_text())["silent"]
-    series = [("Judge-Final", "judge", ORANGE), ("Head (raw score)", "head", "#9AA4AB"), (r"\textsc{ChainUQ}", "chainuq", TEAL)]
+    series = [
+        ("Judge-Final", "judge", ORANGE),
+        ("Our probe (raw)", "head", LIGHT_GRAY),
+        ("SAPLMA + Judge", "fusion-saplma", BLUE),
+        ("UHead + Judge", "fusion-uhead", LIGHT_BLUE),
+        ("JIP + Judge", "chainuq", TEAL),
+    ]
     vals = {k: [np.mean([S[f"{bb}/{d}"]["accepted"][k] for bb in BBS]) for d in DSS] for _, k, _ in series}
-    fig = plt.figure(figsize=(3.3, 1.55))
-    ax = fig.add_axes([0.12, 0.2, 0.86, 0.66])
-    x, w = np.arange(len(DSS)), 0.26
+    width, height, left, bottom, top = 3.3, 1.9, 0.42, 0.22, 0.42
+    fig = plt.figure(figsize=(width, height))
+    ax = fig.add_axes([left / width, bottom / height, (width - left - 0.04) / width, (height - bottom - top) / height])
+    x, w = np.arange(len(DSS)), 0.16
     for i, (name, k, c) in enumerate(series):
-        ax.bar(x + (i - 1) * w, vals[k], width=w - 0.03, color=c, label=name.replace(r"\textsc{ChainUQ}", "ChainUQ"))
-    ax.set_xticks(x), ax.set_xticklabels([DSNAME[d] for d in DSS], fontsize=6.6)
-    ax.set_ylim(0.5, 1.0), ax.set_ylabel("AUROC (accepted)", fontsize=7)
-    ax.tick_params(length=2, pad=2, direction="in", labelsize=6.6)
-    ax.legend(loc="lower center", bbox_to_anchor=(0.5, 1.0), ncol=3, frameon=False, fontsize=6.4, handlelength=0.9, columnspacing=0.9, borderaxespad=0.1)
-    for side in ("top", "right"):
-        ax.spines[side].set_visible(False)
-    fig.savefig(PAPER_DIR / "fig" / "accepted.pdf")
+        ax.bar(x + (i - 2) * w, vals[k], width=w - 0.02, color=c, label=name)
+    ax.set_xticks(x, [DSABBR[d] for d in DSS])
+    ax.set(ylim=(0.5, 1.0), yticks=[0.5, 0.75, 1.0], ylabel="AUROC")
+    ax.tick_params(axis="x", length=0, pad=3)
+    ax.tick_params(axis="y", length=2.5, pad=2)
+    ax.yaxis.labelpad = 2
+    ax.legend(loc="lower center", bbox_to_anchor=(0.43, 1.01), ncol=3, frameon=False, handlelength=0.8, handletextpad=0.3,
+              columnspacing=0.5, labelspacing=0.15, borderaxespad=0.0)
+    save(fig, "accepted.pdf")
     mac("vAccJudge", np.mean(vals["judge"])), mac("vAccOurs", np.mean(vals["chainuq"]))
+    mac("vAccSap", np.mean(vals["fusion-saplma"])), mac("vAccUh", np.mean(vals["fusion-uhead"]))
     mac("vSilentShare", f"{100 * np.mean([S[f'{bb}/{d}']['silent_frac'] for bb in BBS for d in DSS]):.0f}", "{}")
+
+
+def quoted_table():
+    """Comparisons quoted in Sections 5.4-5.6 that have no table of their own (values from the summaries above)."""
+    m = macros
+    rows = [
+        (r"\ref{sec:rq3}", "Fusion with SAPLMA trained on labels / relabeled", f"{m['vSapFus']} / {m['vDistFus']}"),
+        (r"\ref{sec:rq3}", "Leave-one-domain-out imitation above source-only imitation", f"{m['vLodoWins']} of 15 pairs"),
+        (r"\ref{sec:rq3}", r"No target information: \mJ / Judge-Final (OOD)", f"{m['vUnseenB']} / {m['vZeroJ']}"),
+        (r"\ref{sec:budget}", r"\mJ with 50\% of calls / fusion with all calls", f"{m['vRouteHalfAUC']} / {m['vRouteFull']}"),
+        (r"\ref{sec:budget}", r"Gap recovered with 50\% of calls: EIG / random", f"{m['vRouteHalf']}\\% / {m['vRouteRand']}\\%"),
+        (r"\ref{sec:budget}", r"Calls at which \mJ exceeds fusion with all calls", f"{m['vRouteCross']}\\%"),
+        (r"\ref{sec:budget}", r"Fusion calls that \m exceeds without any call", f"{m['vRouteFreeMatch']}\\%"),
+        (r"\ref{sec:robust}", r"Math, gpt-oss-120b high effort: \mJ / judge", f"{m['vHighB']} / {m['vHighJ']}"),
+        (r"\ref{sec:robust}", r"Thinking traces: \mJ / fusion / judge", f"{m['vThinkB']} / {m['vThinkFus']} / {m['vThinkJ']}"),
+        (r"\ref{sec:robust}", r"Thinking traces, judge reads them: \mJ / fusion", f"{m['vTraceB']} / {m['vTraceFus']}"),
+    ]
+    lines = [
+        r"\begin{table}[t]",
+        r"\centering",
+        r"\small",
+        r"\setlength{\tabcolsep}{3pt}",
+        r"\begin{tabular}{@{}c p{0.56\columnwidth} r@{}}",
+        r"\toprule",
+        r"\textbf{Sec.} & \textbf{Comparison} & \textbf{Value} \\",
+        r"\midrule",
+        *[f"{sec} & {name} & {val} \\\\" for sec, name, val in rows],
+        r"\bottomrule",
+        r"\end{tabular}",
+        r"\caption{Comparisons quoted in Sections~\ref{sec:rq3}--\ref{sec:robust} (macro AUROC unless noted; fusion: the "
+        r"stronger probe--judge fusion). Protocols: Appendices~\ref{sec:app_model} and~\ref{sec:app_pools}.}",
+        r"\label{tab:quoted}",
+        r"\end{table}",
+    ]
+    (PAPER_DIR / "table" / "quoted.tex").write_text("\n".join(lines) + "\n")
 
 
 def main():
@@ -796,9 +849,7 @@ def main():
     route = routing()
     accepted_figure()
     teaser(I, route)
-    pct = {"vRouteHalf", "vRouteRand", "vAccShare", "vSilent", "vSilentShare", "vRouteCross"}  # followed by \%: no \xspace
-    tex = "\n".join(rf"\newcommand{{\{k}}}{{{v}" + ("}" if k in pct else r"\xspace}") for k, v in sorted(macros.items()))
-    (PAPER_DIR / "table" / "information_numbers.tex").write_text("% generated by chainuq.reports.information\n" + tex + "\n")
+    quoted_table()
     print(json.dumps(macros, indent=1))
 
 
